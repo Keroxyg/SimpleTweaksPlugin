@@ -9,10 +9,12 @@ using System.Numerics;
 namespace SimpleTweaksPlugin.Tweaks.UiAdjustment;
 
 [TweakName("Casting Text Visibility")]
+//[TweakDescription("Change the font size, color, position, and background of the casting text.")]
 [TweakDescription("Change the font size, color, and background of the casting text.")]
 [TweakAuthor("img")]
 [TweakAutoConfig]
 [TweakReleaseVersion("1.9.3.0")]
+//[Changelog(UnreleasedVersion, "Added option to adjust position of casting text")]
 [Changelog("1.9.6.0", "Fixed tweak not working with a split primary target window")]
 internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
     private uint FocusTargetImageNodeId => CustomNodes.Get(this, "CTVFocus");
@@ -31,6 +33,7 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
         public Vector4 FocusTextColor = new(1);
         public Vector4 FocusEdgeColor = new(115 / 255f, 85 / 255f, 15 / 255f, 1);
         public Vector4 FocusBackgroundColor = new(0);
+        public Vector2 FocusOffset = Vector2.Zero;
         public int FocusFontSize = 14;
         public int FocusBackgroundWidth = 192;
         public int FocusBackgroundHeight;
@@ -39,6 +42,7 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
         public Vector4 TargetTextColor = new(1);
         public Vector4 TargetEdgeColor = new(157 / 255f, 131 / 255f, 91 / 255f, 1);
         public Vector4 TargetBackgroundColor = new(0);
+        public Vector2 TargetOffset = Vector2.Zero;
         public int TargetFontSize = 14;
         public int TargetBackgroundWidth = 192;
         public int TargetBackgroundHeight;
@@ -58,6 +62,7 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
             ImGui.DragInt("Background Width##FocusTarget", ref Config.FocusBackgroundWidth, 0.6f, 90, 800);
             ImGui.DragInt("Background Height Padding##FocusTarget", ref Config.FocusBackgroundHeight, 0.6f, -10, 30);
             ImGui.DragInt("Font Size##FocusTarget", ref Config.FocusFontSize, 0.4f, 12, 50);
+            ImGui.DragFloat2("Text Offset##FocusTarget", ref Config.FocusOffset, 0.1f);
             ImGui.Unindent();
             ImGui.NewLine();
         }
@@ -73,6 +78,7 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
             ImGui.DragInt("Background Width##Target", ref Config.TargetBackgroundWidth, 0.6f, 90, 800);
             ImGui.DragInt("Background Height Padding##Target", ref Config.TargetBackgroundHeight, 0.6f, -10, 30);
             ImGui.DragInt("Font Size##Target", ref Config.TargetFontSize, 0.4f, 12, 50);
+            ImGui.DragFloat2("Text Offset##Target", ref Config.TargetOffset, 0.1f);
             ImGui.Unindent();
             ImGui.NewLine();
         }
@@ -88,20 +94,20 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
         var addon = (AtkUnitBase*)args.Addon;
         switch (args.AddonName) {
             case "_FocusTargetInfo" when addon->IsVisible:
-                UpdateAddOn(addon, FocusTargetTextNodeId, FocusTargetImageNodeId, Config.UseCustomFocusColor, Config.FocusTextColor, Config.FocusEdgeColor, Config.FocusFontSize, DrawFocusTargetBackground);
+                UpdateAddOn(addon, FocusTargetTextNodeId, FocusTargetImageNodeId, Config.UseCustomFocusColor, Config.FocusTextColor, Config.FocusEdgeColor, Config.FocusOffset, Config.FocusFontSize, DrawFocusTargetBackground);
                 break;
             case "_TargetInfo" when addon->IsVisible:
-                UpdateAddOn(addon, TargetTextNodeId, TargetImageNodeId, Config.UseCustomTargetColor, Config.TargetTextColor, Config.TargetEdgeColor, Config.TargetFontSize, DrawTargetBackground);
+                UpdateAddOn(addon, TargetTextNodeId, TargetImageNodeId, Config.UseCustomTargetColor, Config.TargetTextColor, Config.TargetEdgeColor, Config.TargetOffset, Config.TargetFontSize, DrawTargetBackground);
                 break;
             case "_TargetInfoCastBar" when addon->IsVisible:
-                UpdateAddOn(addon, SplitTargetTextNodeId, TargetImageNodeId, Config.UseCustomTargetColor, Config.TargetTextColor, Config.TargetEdgeColor, Config.TargetFontSize, DrawTargetBackground);
+                UpdateAddOn(addon, SplitTargetTextNodeId, TargetImageNodeId, Config.UseCustomTargetColor, Config.TargetTextColor, Config.TargetEdgeColor, Config.TargetOffset, Config.TargetFontSize, DrawTargetBackground);
                 break;
         }
     }
 
     delegate void DrawBackgroundAction(AtkTextNode* textNode, AtkImageNode* imageNode);
 
-    private void UpdateAddOn(AtkUnitBase* ui, uint textNodeId, uint imageNodeId, bool useCustomColor, Vector4 textColor, Vector4 edgeColor, int fontSize, DrawBackgroundAction drawBackground) {
+    private void UpdateAddOn(AtkUnitBase* ui, uint textNodeId, uint imageNodeId, bool useCustomColor, Vector4 textColor, Vector4 edgeColor, Vector2 textOffset, int fontSize, DrawBackgroundAction drawBackground) {
         var textNode = Common.GetNodeByID<AtkTextNode>(&ui->UldManager, textNodeId);
         if (textNode == null) return;
 
@@ -110,6 +116,7 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
             TryMakeNodes(ui, imageNodeId);
             ToggleImageNodeVisibility(textNode->AtkResNode.IsVisible(), &ui->UldManager, imageNodeId);
             AdjustTextColorsAndFontSize(textNode, textColor, edgeColor, fontSize);
+            AdjustTextOffset(textNode, textOffset);
 
             var imageNode = GetImageNode(&ui->UldManager, imageNodeId);
             if (imageNode != null) drawBackground(textNode, imageNode);
@@ -141,9 +148,15 @@ internal unsafe class CastingTextVisibility : UiAdjustments.SubTweak {
         textNode->FontSize = (byte)fontSize;
     }
 
+    private void AdjustTextOffset(AtkTextNode* textNode, Vector2 textOffset)
+    {
+        textNode->SetPositionFloat(textOffset[0], textOffset[1]);
+    }
+
     private void ResetText(AtkTextNode* textNode) {
         var defaultEdgeColor = new Vector4(115 / 255f, 85 / 255f, 15 / 255f, 1);
         AdjustTextColorsAndFontSize(textNode, Vector4.One, defaultEdgeColor, 14);
+        AdjustTextOffset(textNode, Vector2.Zero);
     }
 
     private void ResetTextNodes() {
